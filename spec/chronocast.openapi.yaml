@@ -1,0 +1,2064 @@
+openapi: 3.1.0
+info:
+  title: Chronocast API
+  version: 1.0.0
+  description: |
+    Predictive analytics platform API. Upload time-series datasets,
+    train forecast models, run predictions, and receive anomaly alerts.
+  contact:
+    name: Chronocast
+    url: https://chronocast.dev
+  license:
+    name: MIT
+
+servers:
+  - url: https://api.chronocast.dev/v1
+    description: Production
+  - url: http://localhost:3737/v1
+    description: Local development
+
+# ---------------------------------------------------------------------------
+# Security schemes — tests API key, Bearer, and OAuth2
+# ---------------------------------------------------------------------------
+security:
+  - apiKey: []
+
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    oauth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://api.chronocast.dev/v1/oauth/token
+          scopes:
+            read: Read-only access
+            write: Read-write access
+            admin: Full admin access
+
+  # -------------------------------------------------------------------------
+  # Reusable parameters
+  # -------------------------------------------------------------------------
+  parameters:
+    OrgId:
+      name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DatasetId:
+      name: dataset_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ModelId:
+      name: model_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AlertId:
+      name: alert_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    WebhookId:
+      name: webhook_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Prevents duplicate operations when retrying requests.
+    CursorParam:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Opaque cursor for cursor-based pagination.
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    OffsetParam:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+  # -------------------------------------------------------------------------
+  # Headers
+  # -------------------------------------------------------------------------
+  headers:
+    X-RateLimit-Limit:
+      schema:
+        type: integer
+      description: Requests allowed per minute.
+    X-RateLimit-Remaining:
+      schema:
+        type: integer
+      description: Requests remaining in the current window.
+    X-RateLimit-Reset:
+      schema:
+        type: string
+        format: date-time
+      description: When the rate limit window resets.
+    X-Request-Id:
+      schema:
+        type: string
+        format: uuid
+
+  # -------------------------------------------------------------------------
+  # Schemas
+  # -------------------------------------------------------------------------
+  schemas:
+    # -- Pagination wrapper (cursor-based) --------------------------------
+    CursorPage:
+      type: object
+      properties:
+        has_more:
+          type: boolean
+        next_cursor:
+          type: string
+          nullable: true
+        data:
+          type: array
+          items: {}
+      required: [has_more, next_cursor, data]
+
+    # -- Pagination wrapper (offset-based) --------------------------------
+    OffsetPage:
+      type: object
+      properties:
+        total:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+        data:
+          type: array
+          items: {}
+      required: [total, offset, limit, data]
+
+    # -- Async operation (long-running) -----------------------------------
+    AsyncOperation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, running, succeeded, failed, cancelled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        result_url:
+          type: string
+          format: uri
+          nullable: true
+        error:
+          $ref: "#/components/schemas/OperationError"
+          nullable: true
+        progress_pct:
+          type: number
+          minimum: 0
+          maximum: 100
+          nullable: true
+      required: [id, status, created_at, updated_at]
+
+    OperationError:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required: [code, message]
+
+    # -- Organization -----------------------------------------------------
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+          pattern: "^[a-z0-9-]+$"
+        plan:
+          type: string
+          enum: [free, pro, enterprise]
+        created_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+      required: [id, name, slug, plan, created_at]
+
+    OrganizationCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        slug:
+          type: string
+          pattern: "^[a-z0-9-]+$"
+        plan:
+          type: string
+          enum: [free, pro, enterprise]
+          default: free
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+      required: [name, slug]
+
+    # -- Project ----------------------------------------------------------
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        org_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, org_id, name, created_at, updated_at]
+
+    ProjectCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          nullable: true
+      required: [name]
+
+    # -- Dataset ----------------------------------------------------------
+    Dataset:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        format:
+          type: string
+          enum: [csv, parquet, json]
+        row_count:
+          type: integer
+          nullable: true
+        columns:
+          type: array
+          items:
+            $ref: "#/components/schemas/ColumnSchema"
+          nullable: true
+        size_bytes:
+          type: integer
+        status:
+          type: string
+          enum: [uploading, processing, ready, failed]
+        created_at:
+          type: string
+          format: date-time
+        source:
+          $ref: "#/components/schemas/DataSource"
+      required: [id, project_id, name, format, size_bytes, status, created_at, source]
+
+    ColumnSchema:
+      type: object
+      properties:
+        name:
+          type: string
+        dtype:
+          type: string
+          enum: [float64, int64, string, datetime, boolean]
+        nullable:
+          type: boolean
+      required: [name, dtype, nullable]
+
+    # -- Discriminated union: DataSource (oneOf) --------------------------
+    DataSource:
+      oneOf:
+        - $ref: "#/components/schemas/FileUploadSource"
+        - $ref: "#/components/schemas/WebhookIngestSource"
+        - $ref: "#/components/schemas/ApiPullSource"
+      discriminator:
+        propertyName: type
+        mapping:
+          file_upload: "#/components/schemas/FileUploadSource"
+          webhook_ingest: "#/components/schemas/WebhookIngestSource"
+          api_pull: "#/components/schemas/ApiPullSource"
+
+    FileUploadSource:
+      type: object
+      properties:
+        type:
+          type: string
+          const: file_upload
+        filename:
+          type: string
+        content_type:
+          type: string
+      required: [type, filename, content_type]
+
+    WebhookIngestSource:
+      type: object
+      properties:
+        type:
+          type: string
+          const: webhook_ingest
+        endpoint_url:
+          type: string
+          format: uri
+        secret:
+          type: string
+      required: [type, endpoint_url, secret]
+
+    ApiPullSource:
+      type: object
+      properties:
+        type:
+          type: string
+          const: api_pull
+        source_url:
+          type: string
+          format: uri
+        schedule_cron:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+      required: [type, source_url, schedule_cron]
+
+    DatasetCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        source:
+          $ref: "#/components/schemas/DataSource"
+      required: [name, source]
+
+    # -- Model (forecast) -------------------------------------------------
+    ForecastModel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        algorithm:
+          $ref: "#/components/schemas/Algorithm"
+        status:
+          type: string
+          enum: [draft, training, trained, failed, archived]
+        dataset_id:
+          type: string
+          format: uuid
+        target_column:
+          type: string
+        feature_columns:
+          type: array
+          items:
+            type: string
+        hyperparameters:
+          $ref: "#/components/schemas/Hyperparameters"
+          nullable: true
+        metrics:
+          $ref: "#/components/schemas/TrainingMetrics"
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        trained_at:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, project_id, name, algorithm, status, dataset_id, target_column, feature_columns, created_at]
+
+    # -- Discriminated union: Algorithm (oneOf) ---------------------------
+    Algorithm:
+      oneOf:
+        - $ref: "#/components/schemas/ArimaAlgorithm"
+        - $ref: "#/components/schemas/NeuralAlgorithm"
+        - $ref: "#/components/schemas/EnsembleAlgorithm"
+      discriminator:
+        propertyName: type
+        mapping:
+          arima: "#/components/schemas/ArimaAlgorithm"
+          neural: "#/components/schemas/NeuralAlgorithm"
+          ensemble: "#/components/schemas/EnsembleAlgorithm"
+
+    ArimaAlgorithm:
+      type: object
+      properties:
+        type:
+          type: string
+          const: arima
+        order_p:
+          type: integer
+          minimum: 0
+          maximum: 10
+        order_d:
+          type: integer
+          minimum: 0
+          maximum: 3
+        order_q:
+          type: integer
+          minimum: 0
+          maximum: 10
+        seasonal:
+          type: boolean
+          default: false
+      required: [type, order_p, order_d, order_q]
+
+    NeuralAlgorithm:
+      type: object
+      properties:
+        type:
+          type: string
+          const: neural
+        architecture:
+          type: string
+          enum: [lstm, transformer, tcn]
+        layers:
+          type: integer
+          minimum: 1
+          maximum: 24
+        hidden_size:
+          type: integer
+          minimum: 8
+          maximum: 2048
+        dropout:
+          type: number
+          minimum: 0
+          maximum: 1
+      required: [type, architecture, layers, hidden_size]
+
+    EnsembleAlgorithm:
+      type: object
+      properties:
+        type:
+          type: string
+          const: ensemble
+        sub_algorithms:
+          type: array
+          items:
+            $ref: "#/components/schemas/Algorithm"
+          minItems: 2
+          maxItems: 5
+        combination_method:
+          type: string
+          enum: [average, weighted, stacking]
+      required: [type, sub_algorithms, combination_method]
+
+    Hyperparameters:
+      type: object
+      properties:
+        learning_rate:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+        epochs:
+          type: integer
+          minimum: 1
+        batch_size:
+          type: integer
+          minimum: 1
+        early_stopping:
+          type: boolean
+          default: true
+
+    TrainingMetrics:
+      type: object
+      properties:
+        mae:
+          type: number
+          description: Mean absolute error
+        rmse:
+          type: number
+          description: Root mean squared error
+        mape:
+          type: number
+          description: Mean absolute percentage error
+        r_squared:
+          type: number
+        training_duration_seconds:
+          type: number
+      required: [mae, rmse, mape, r_squared, training_duration_seconds]
+
+    ModelCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        algorithm:
+          $ref: "#/components/schemas/Algorithm"
+        dataset_id:
+          type: string
+          format: uuid
+        target_column:
+          type: string
+        feature_columns:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        hyperparameters:
+          $ref: "#/components/schemas/Hyperparameters"
+      required: [name, algorithm, dataset_id, target_column, feature_columns]
+
+    # -- Prediction -------------------------------------------------------
+    PredictionRequest:
+      type: object
+      properties:
+        horizon:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          description: Number of time steps to forecast
+        confidence_intervals:
+          type: array
+          items:
+            type: number
+            minimum: 0
+            maximum: 1
+          default: [0.9, 0.95]
+        streaming:
+          type: boolean
+          default: false
+          description: If true, results are streamed via SSE
+        input_overrides:
+          type: object
+          additionalProperties:
+            type: number
+          nullable: true
+          description: Override feature values for what-if analysis
+      required: [horizon]
+
+    PredictionResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        model_id:
+          type: string
+          format: uuid
+        horizon:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForecastPoint"
+      required: [id, model_id, horizon, created_at, points]
+
+    ForecastPoint:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        value:
+          type: number
+        confidence_intervals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfidenceInterval"
+      required: [timestamp, value]
+
+    ConfidenceInterval:
+      type: object
+      properties:
+        level:
+          type: number
+        lower:
+          type: number
+        upper:
+          type: number
+      required: [level, lower, upper]
+
+    # -- SSE streaming event (for prediction stream) ----------------------
+    PredictionStreamEvent:
+      oneOf:
+        - $ref: "#/components/schemas/StreamPointEvent"
+        - $ref: "#/components/schemas/StreamProgressEvent"
+        - $ref: "#/components/schemas/StreamDoneEvent"
+        - $ref: "#/components/schemas/StreamErrorEvent"
+      discriminator:
+        propertyName: event
+        mapping:
+          point: "#/components/schemas/StreamPointEvent"
+          progress: "#/components/schemas/StreamProgressEvent"
+          done: "#/components/schemas/StreamDoneEvent"
+          error: "#/components/schemas/StreamErrorEvent"
+
+    StreamPointEvent:
+      type: object
+      properties:
+        event:
+          type: string
+          const: point
+        data:
+          $ref: "#/components/schemas/ForecastPoint"
+      required: [event, data]
+
+    StreamProgressEvent:
+      type: object
+      properties:
+        event:
+          type: string
+          const: progress
+        pct:
+          type: number
+          minimum: 0
+          maximum: 100
+      required: [event, pct]
+
+    StreamDoneEvent:
+      type: object
+      properties:
+        event:
+          type: string
+          const: done
+        prediction_id:
+          type: string
+          format: uuid
+      required: [event, prediction_id]
+
+    StreamErrorEvent:
+      type: object
+      properties:
+        event:
+          type: string
+          const: error
+        code:
+          type: string
+        message:
+          type: string
+      required: [event, code, message]
+
+    # -- Alert ------------------------------------------------------------
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        model_id:
+          type: string
+          format: uuid
+        condition:
+          $ref: "#/components/schemas/AlertCondition"
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+      required: [id, project_id, name, model_id, condition, channels, enabled, created_at]
+
+    # -- Discriminated union: AlertCondition (oneOf) ----------------------
+    AlertCondition:
+      oneOf:
+        - $ref: "#/components/schemas/ThresholdCondition"
+        - $ref: "#/components/schemas/AnomalyCondition"
+        - $ref: "#/components/schemas/TrendCondition"
+      discriminator:
+        propertyName: type
+        mapping:
+          threshold: "#/components/schemas/ThresholdCondition"
+          anomaly: "#/components/schemas/AnomalyCondition"
+          trend: "#/components/schemas/TrendCondition"
+
+    ThresholdCondition:
+      type: object
+      properties:
+        type:
+          type: string
+          const: threshold
+        metric:
+          type: string
+        operator:
+          type: string
+          enum: [gt, gte, lt, lte, eq]
+        value:
+          type: number
+        duration_minutes:
+          type: integer
+          minimum: 1
+      required: [type, metric, operator, value, duration_minutes]
+
+    AnomalyCondition:
+      type: object
+      properties:
+        type:
+          type: string
+          const: anomaly
+        sensitivity:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "0 = least sensitive, 1 = most sensitive"
+        min_deviation_pct:
+          type: number
+      required: [type, sensitivity]
+
+    TrendCondition:
+      type: object
+      properties:
+        type:
+          type: string
+          const: trend
+        direction:
+          type: string
+          enum: [increasing, decreasing, either]
+        slope_threshold:
+          type: number
+        window_size:
+          type: integer
+          minimum: 2
+      required: [type, direction, slope_threshold, window_size]
+
+    # -- Discriminated union: NotificationChannel (oneOf) -----------------
+    NotificationChannel:
+      oneOf:
+        - $ref: "#/components/schemas/EmailChannel"
+        - $ref: "#/components/schemas/SlackChannel"
+        - $ref: "#/components/schemas/WebhookChannel"
+      discriminator:
+        propertyName: type
+        mapping:
+          email: "#/components/schemas/EmailChannel"
+          slack: "#/components/schemas/SlackChannel"
+          webhook: "#/components/schemas/WebhookChannel"
+
+    EmailChannel:
+      type: object
+      properties:
+        type:
+          type: string
+          const: email
+        address:
+          type: string
+          format: email
+      required: [type, address]
+
+    SlackChannel:
+      type: object
+      properties:
+        type:
+          type: string
+          const: slack
+        channel_id:
+          type: string
+        webhook_url:
+          type: string
+          format: uri
+      required: [type, channel_id, webhook_url]
+
+    WebhookChannel:
+      type: object
+      properties:
+        type:
+          type: string
+          const: webhook
+        url:
+          type: string
+          format: uri
+        secret:
+          type: string
+      required: [type, url]
+
+    AlertCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        model_id:
+          type: string
+          format: uuid
+        condition:
+          $ref: "#/components/schemas/AlertCondition"
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+          minItems: 1
+        enabled:
+          type: boolean
+          default: true
+      required: [name, model_id, condition, channels]
+
+    AlertEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        alert_id:
+          type: string
+          format: uuid
+        triggered_at:
+          type: string
+          format: date-time
+        condition_snapshot:
+          $ref: "#/components/schemas/AlertCondition"
+        observed_value:
+          type: number
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, alert_id, triggered_at, condition_snapshot, observed_value]
+
+    # -- Member -----------------------------------------------------------
+    Member:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        org_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [owner, admin, member, viewer]
+        joined_at:
+          type: string
+          format: date-time
+      required: [id, org_id, email, role, joined_at]
+
+    MemberInvite:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, member, viewer]
+          default: member
+      required: [email]
+
+    # -- Webhook endpoint -------------------------------------------------
+    WebhookEndpoint:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+            enum:
+              - model.training.started
+              - model.training.completed
+              - model.training.failed
+              - prediction.completed
+              - alert.triggered
+              - alert.resolved
+              - dataset.ready
+              - dataset.failed
+        secret:
+          type: string
+          description: HMAC-SHA256 signing secret (only returned on creation)
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+      required: [id, url, events, active, created_at]
+
+    WebhookEndpointCreate:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+            enum:
+              - model.training.started
+              - model.training.completed
+              - model.training.failed
+              - prediction.completed
+              - alert.triggered
+              - alert.resolved
+              - dataset.ready
+              - dataset.failed
+          minItems: 1
+      required: [url, events]
+
+    WebhookDelivery:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        webhook_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        response_status:
+          type: integer
+          nullable: true
+        delivered_at:
+          type: string
+          format: date-time
+        success:
+          type: boolean
+      required: [id, webhook_id, event_type, payload, delivered_at, success]
+
+    # -- Batch operations -------------------------------------------------
+    BatchPredictionRequest:
+      type: object
+      properties:
+        requests:
+          type: array
+          items:
+            allOf:
+              - type: object
+                properties:
+                  model_id:
+                    type: string
+                    format: uuid
+                required: [model_id]
+              - $ref: "#/components/schemas/PredictionRequest"
+          minItems: 1
+          maxItems: 50
+      required: [requests]
+
+    BatchPredictionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        results:
+          type: array
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/PredictionResult"
+              - $ref: "#/components/schemas/BatchItemError"
+            discriminator:
+              propertyName: result_type
+              mapping:
+                result: "#/components/schemas/PredictionResult"
+                error: "#/components/schemas/BatchItemError"
+      required: [id, results]
+
+    BatchItemError:
+      type: object
+      properties:
+        result_type:
+          type: string
+          const: error
+        index:
+          type: integer
+        code:
+          type: string
+        message:
+          type: string
+      required: [result_type, index, code, message]
+
+    # -- Error responses --------------------------------------------------
+    ApiError:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [invalid_request, authentication_error, permission_denied, not_found, rate_limit, conflict, internal_error]
+        message:
+          type: string
+        request_id:
+          type: string
+          format: uuid
+        details:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+          nullable: true
+      required: [type, message, request_id]
+
+    FieldError:
+      type: object
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+        code:
+          type: string
+          enum: [required, invalid_format, out_of_range, too_long, too_short, unique_violation]
+      required: [field, message, code]
+
+  # -------------------------------------------------------------------------
+  # Reusable responses
+  # -------------------------------------------------------------------------
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Unauthorized:
+      description: Missing or invalid authentication
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotFound:
+      description: Resource not found
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+# ===========================================================================
+# Paths
+# ===========================================================================
+paths:
+  # ---- Organizations ----------------------------------------------------
+  /organizations:
+    get:
+      operationId: listOrganizations
+      summary: List organizations
+      tags: [Organizations]
+      parameters:
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated list of organizations
+          headers:
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/X-RateLimit-Limit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/X-RateLimit-Remaining"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CursorPage"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Organization"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createOrganization
+      summary: Create an organization
+      tags: [Organizations]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationCreate"
+      responses:
+        "201":
+          description: Organization created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /organizations/{org_id}:
+    get:
+      operationId: getOrganization
+      summary: Retrieve an organization
+      tags: [Organizations]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "200":
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateOrganization
+      summary: Update an organization
+      tags: [Organizations]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                plan:
+                  type: string
+                  enum: [free, pro, enterprise]
+                metadata:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  nullable: true
+      responses:
+        "200":
+          description: Updated organization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteOrganization
+      summary: Delete an organization
+      tags: [Organizations]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "204":
+          description: Organization deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---- Members ----------------------------------------------------------
+  /organizations/{org_id}/members:
+    get:
+      operationId: listMembers
+      summary: List organization members
+      tags: [Members]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+        - name: role
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [owner, admin, member, viewer]
+      responses:
+        "200":
+          description: Paginated list of members
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CursorPage"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Member"
+    post:
+      operationId: inviteMember
+      summary: Invite a member to the organization
+      tags: [Members]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberInvite"
+      responses:
+        "201":
+          description: Member invited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ---- Projects ---------------------------------------------------------
+  /organizations/{org_id}/projects:
+    get:
+      operationId: listProjects
+      summary: List projects in an organization
+      tags: [Projects]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated list of projects
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CursorPage"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      summary: Create a project
+      tags: [Projects]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectCreate"
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /organizations/{org_id}/projects/{project_id}:
+    get:
+      operationId: getProject
+      summary: Retrieve a project
+      tags: [Projects]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteProject
+      summary: Delete a project
+      tags: [Projects]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "204":
+          description: Project deleted
+
+  # ---- Datasets ---------------------------------------------------------
+  /organizations/{org_id}/projects/{project_id}/datasets:
+    get:
+      operationId: listDatasets
+      summary: List datasets in a project
+      tags: [Datasets]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [uploading, processing, ready, failed]
+      responses:
+        "200":
+          description: Paginated list of datasets
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CursorPage"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Dataset"
+    post:
+      operationId: createDataset
+      summary: Create a dataset (metadata only, for API pull or webhook sources)
+      tags: [Datasets]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DatasetCreate"
+      responses:
+        "201":
+          description: Dataset created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dataset"
+
+  /organizations/{org_id}/projects/{project_id}/datasets/upload:
+    post:
+      operationId: uploadDataset
+      summary: Upload a dataset file (CSV, Parquet, or JSON)
+      tags: [Datasets]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                file:
+                  type: string
+                  format: binary
+                  description: The dataset file (CSV, Parquet, or JSON)
+              required: [name, file]
+      responses:
+        "201":
+          description: Dataset created from upload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dataset"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /organizations/{org_id}/projects/{project_id}/datasets/{dataset_id}:
+    get:
+      operationId: getDataset
+      summary: Retrieve a dataset
+      tags: [Datasets]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/DatasetId"
+      responses:
+        "200":
+          description: Dataset details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dataset"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteDataset
+      summary: Delete a dataset
+      tags: [Datasets]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/DatasetId"
+      responses:
+        "204":
+          description: Dataset deleted
+
+  /organizations/{org_id}/projects/{project_id}/datasets/{dataset_id}/download:
+    get:
+      operationId: downloadDataset
+      summary: Download the raw dataset file
+      tags: [Datasets]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/DatasetId"
+      responses:
+        "200":
+          description: Raw dataset file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---- Models -----------------------------------------------------------
+  /organizations/{org_id}/projects/{project_id}/models:
+    get:
+      operationId: listModels
+      summary: List forecast models
+      tags: [Models]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [draft, training, trained, failed, archived]
+      responses:
+        "200":
+          description: Paginated list of models
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CursorPage"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ForecastModel"
+    post:
+      operationId: createModel
+      summary: Create a forecast model
+      tags: [Models]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelCreate"
+      responses:
+        "201":
+          description: Model created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForecastModel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /organizations/{org_id}/projects/{project_id}/models/{model_id}:
+    get:
+      operationId: getModel
+      summary: Retrieve a forecast model
+      tags: [Models]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ModelId"
+      responses:
+        "200":
+          description: Model details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForecastModel"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteModel
+      summary: Delete a forecast model
+      tags: [Models]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ModelId"
+      responses:
+        "204":
+          description: Model deleted
+
+  /organizations/{org_id}/projects/{project_id}/models/{model_id}/train:
+    post:
+      operationId: trainModel
+      summary: Start model training (async, returns operation to poll)
+      tags: [Models]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ModelId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hyperparameters:
+                  $ref: "#/components/schemas/Hyperparameters"
+      responses:
+        "202":
+          description: Training started — returns an async operation to poll
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncOperation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /organizations/{org_id}/projects/{project_id}/models/{model_id}/predict:
+    post:
+      operationId: createPrediction
+      summary: Run a prediction (optionally streaming via SSE)
+      tags: [Predictions]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/ModelId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PredictionRequest"
+      responses:
+        "200":
+          description: |
+            Prediction result. If `streaming: true` was set, the response
+            is `text/event-stream` (SSE) delivering PredictionStreamEvent objects.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredictionResult"
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/PredictionStreamEvent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---- Batch predictions ------------------------------------------------
+  /organizations/{org_id}/projects/{project_id}/predictions/batch:
+    post:
+      operationId: createBatchPrediction
+      summary: Run predictions across multiple models in a single request
+      tags: [Predictions]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchPredictionRequest"
+      responses:
+        "200":
+          description: Batch prediction results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchPredictionResponse"
+
+  # ---- Alerts -----------------------------------------------------------
+  /organizations/{org_id}/projects/{project_id}/alerts:
+    get:
+      operationId: listAlerts
+      summary: List alerts in a project
+      tags: [Alerts]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated list of alerts
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CursorPage"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Alert"
+    post:
+      operationId: createAlert
+      summary: Create an alert
+      tags: [Alerts]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertCreate"
+      responses:
+        "201":
+          description: Alert created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Alert"
+
+  /organizations/{org_id}/projects/{project_id}/alerts/{alert_id}:
+    get:
+      operationId: getAlert
+      summary: Retrieve an alert
+      tags: [Alerts]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AlertId"
+      responses:
+        "200":
+          description: Alert details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Alert"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateAlert
+      summary: Update an alert
+      tags: [Alerts]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AlertId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                condition:
+                  $ref: "#/components/schemas/AlertCondition"
+                channels:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/NotificationChannel"
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated alert
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Alert"
+    delete:
+      operationId: deleteAlert
+      summary: Delete an alert
+      tags: [Alerts]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AlertId"
+      responses:
+        "204":
+          description: Alert deleted
+
+  /organizations/{org_id}/projects/{project_id}/alerts/{alert_id}/history:
+    get:
+      operationId: listAlertHistory
+      summary: List alert event history (offset-paginated)
+      tags: [Alerts]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AlertId"
+        - $ref: "#/components/parameters/OffsetParam"
+        - $ref: "#/components/parameters/LimitParam"
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Only return events triggered after this timestamp
+        - name: until
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Only return events triggered before this timestamp
+      responses:
+        "200":
+          description: Paginated alert event history (offset-based)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/OffsetPage"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/AlertEvent"
+
+  # ---- Operations (polling) ---------------------------------------------
+  /operations/{operation_id}:
+    get:
+      operationId: getOperation
+      summary: Poll an async operation
+      tags: [Operations]
+      parameters:
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Operation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncOperation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /operations/{operation_id}/cancel:
+    post:
+      operationId: cancelOperation
+      summary: Cancel a running async operation
+      tags: [Operations]
+      parameters:
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Operation cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncOperation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---- Webhooks ---------------------------------------------------------
+  /webhooks:
+    get:
+      operationId: listWebhooks
+      summary: List webhook endpoints
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated list of webhook endpoints
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CursorPage"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/WebhookEndpoint"
+    post:
+      operationId: createWebhook
+      summary: Create a webhook endpoint
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookEndpointCreate"
+      responses:
+        "201":
+          description: Webhook endpoint created (secret is included only in this response)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpoint"
+
+  /webhooks/{webhook_id}:
+    get:
+      operationId: getWebhook
+      summary: Retrieve a webhook endpoint
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WebhookId"
+      responses:
+        "200":
+          description: Webhook endpoint details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpoint"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteWebhook
+      summary: Delete a webhook endpoint
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WebhookId"
+      responses:
+        "204":
+          description: Webhook endpoint deleted
+
+  /webhooks/{webhook_id}/deliveries:
+    get:
+      operationId: listWebhookDeliveries
+      summary: List delivery attempts for a webhook
+      tags: [Webhooks]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/WebhookId"
+        - $ref: "#/components/parameters/CursorParam"
+        - $ref: "#/components/parameters/LimitParam"
+      responses:
+        "200":
+          description: Paginated list of webhook deliveries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CursorPage"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/WebhookDelivery"
+
+  /webhooks/{webhook_id}/verify:
+    post:
+      operationId: verifyWebhookSignature
+      summary: Verify a webhook payload signature
+      tags: [Webhooks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload:
+                  type: string
+                  description: Raw JSON payload string
+                signature:
+                  type: string
+                  description: The X-Chronocast-Signature header value
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: The X-Chronocast-Timestamp header value
+              required: [payload, signature, timestamp]
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  reason:
+                    type: string
+                    nullable: true
+                required: [valid]
+
+tags:
+  - name: Organizations
+    description: Manage organizations
+  - name: Members
+    description: Manage organization members and RBAC
+  - name: Projects
+    description: Manage projects within organizations
+  - name: Datasets
+    description: Upload and manage time-series datasets
+  - name: Models
+    description: Create, train, and manage forecast models
+  - name: Predictions
+    description: Run predictions and streaming forecasts
+  - name: Alerts
+    description: Configure anomaly alerts and view history
+  - name: Operations
+    description: Poll and manage async operations
+  - name: Webhooks
+    description: Manage webhook endpoints and deliveries

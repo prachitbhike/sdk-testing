@@ -1,0 +1,21 @@
+# Fern SDK Generator Configuration for Chronocast API
+# https://docs.buildwithfern.com
+
+default-group: local
+api:
+  specs:
+    - openapi: ../../spec/chronocast.openapi.yaml
+
+groups:
+  local:
+    generators:
+      - name: fernapi/fern-typescript-node-sdk
+        version: 0.x.x
+        output:
+          location: local-file-system
+          path: ../../sdks/fern
+        config:
+          namespaceExport: Chronocast
+          allowCustomFetcher: true
+          includeUtilsOnUnionMembers: true
+          noSerdeLayer: false

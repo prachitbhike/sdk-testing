@@ -1,0 +1,19 @@
+{
+  "name": "chronocast-sdk-comparison",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cross-testing Stainless, Fern, and Speakeasy SDK generators with a realistic API",
+  "scripts": {
+    "server": "node server/server.js",
+    "test:raw": "node tests/test-runner.js raw-fetch",
+    "test:stainless": "node tests/test-runner.js stainless",
+    "test:fern": "node tests/test-runner.js fern",
+    "test:speakeasy": "node tests/test-runner.js speakeasy",
+    "test:all": "node tests/test-runner.js all",
+    "lint:spec": "npx @redocly/cli lint spec/chronocast.openapi.yaml"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^1.25.0"
+  }
+}

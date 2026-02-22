@@ -1,0 +1,17 @@
+{
+  "name": "chronocast-mock-server",
+  "version": "1.0.0",
+  "description": "Fastify mock server for the Chronocast predictive analytics API",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "fastify": "^5.2.1",
+    "@fastify/multipart": "^9.0.3",
+    "@fastify/cors": "^10.0.2",
+    "uuid": "^11.1.0"
+  }
+}

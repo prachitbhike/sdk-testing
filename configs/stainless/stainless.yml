@@ -1,0 +1,193 @@
+# Stainless SDK Configuration for Chronocast API
+# https://docs.stainlessapi.com/guides/configure
+
+organization:
+  name: chronocast
+  docs_url: https://chronocast.dev/docs
+
+project:
+  name: chronocast
+  openapi:
+    spec: ../../spec/chronocast.openapi.yaml
+
+targets:
+  node:
+    package_name: chronocast
+    production_repo: chronocast/chronocast-node
+    publish:
+      npm: true
+  python:
+    package_name: chronocast
+    production_repo: chronocast/chronocast-python
+    publish:
+      pypi: true
+
+client_settings:
+  opts:
+    api_key:
+      type: string
+      read_env: CHRONOCAST_API_KEY
+      auth:
+        security_scheme: apiKey
+    bearer_token:
+      type: string
+      nullable: true
+      read_env: CHRONOCAST_BEARER_TOKEN
+      auth:
+        security_scheme: bearerAuth
+
+environments:
+  production: https://api.chronocast.dev/v1
+  local_development: http://localhost:3737/v1
+
+pagination:
+  cursor_page:
+    type: cursor
+    request:
+      cursor: cursor
+      limit: limit
+    response:
+      next_cursor: next_cursor
+      has_more: has_more
+      results: data
+  offset_page:
+    type: offset
+    request:
+      offset: offset
+      limit: limit
+    response:
+      total: total
+      offset: offset
+      limit: limit
+      results: data
+
+resources:
+  organizations:
+    methods:
+      list:
+        endpoint: GET /organizations
+        pagination: cursor_page
+      create:
+        endpoint: POST /organizations
+      retrieve:
+        endpoint: GET /organizations/{org_id}
+      update:
+        endpoint: PATCH /organizations/{org_id}
+      delete:
+        endpoint: DELETE /organizations/{org_id}
+
+    subresources:
+      members:
+        methods:
+          list:
+            endpoint: GET /organizations/{org_id}/members
+            pagination: cursor_page
+          invite:
+            endpoint: POST /organizations/{org_id}/members
+
+      projects:
+        methods:
+          list:
+            endpoint: GET /organizations/{org_id}/projects
+            pagination: cursor_page
+          create:
+            endpoint: POST /organizations/{org_id}/projects
+          retrieve:
+            endpoint: GET /organizations/{org_id}/projects/{project_id}
+          delete:
+            endpoint: DELETE /organizations/{org_id}/projects/{project_id}
+
+        subresources:
+          datasets:
+            methods:
+              list:
+                endpoint: GET /organizations/{org_id}/projects/{project_id}/datasets
+                pagination: cursor_page
+              create:
+                endpoint: POST /organizations/{org_id}/projects/{project_id}/datasets
+              upload:
+                endpoint: POST /organizations/{org_id}/projects/{project_id}/datasets/upload
+              retrieve:
+                endpoint: GET /organizations/{org_id}/projects/{project_id}/datasets/{dataset_id}
+              delete:
+                endpoint: DELETE /organizations/{org_id}/projects/{project_id}/datasets/{dataset_id}
+              download:
+                endpoint: GET /organizations/{org_id}/projects/{project_id}/datasets/{dataset_id}/download
+
+          models:
+            methods:
+              list:
+                endpoint: GET /organizations/{org_id}/projects/{project_id}/models
+                pagination: cursor_page
+              create:
+                endpoint: POST /organizations/{org_id}/projects/{project_id}/models
+              retrieve:
+                endpoint: GET /organizations/{org_id}/projects/{project_id}/models/{model_id}
+              delete:
+                endpoint: DELETE /organizations/{org_id}/projects/{project_id}/models/{model_id}
+              train:
+                endpoint: POST /organizations/{org_id}/projects/{project_id}/models/{model_id}/train
+
+            subresources:
+              predictions:
+                methods:
+                  create:
+                    endpoint: POST /organizations/{org_id}/projects/{project_id}/models/{model_id}/predict
+                    streaming:
+                      # When streaming=true in request, response is SSE text/event-stream
+                      request_flag: streaming
+                      format: sse
+                      event_type: PredictionStreamEvent
+
+          predictions:
+            methods:
+              create_batch:
+                endpoint: POST /organizations/{org_id}/projects/{project_id}/predictions/batch
+
+          alerts:
+            methods:
+              list:
+                endpoint: GET /organizations/{org_id}/projects/{project_id}/alerts
+                pagination: cursor_page
+              create:
+                endpoint: POST /organizations/{org_id}/projects/{project_id}/alerts
+              retrieve:
+                endpoint: GET /organizations/{org_id}/projects/{project_id}/alerts/{alert_id}
+              update:
+                endpoint: PATCH /organizations/{org_id}/projects/{project_id}/alerts/{alert_id}
+              delete:
+                endpoint: DELETE /organizations/{org_id}/projects/{project_id}/alerts/{alert_id}
+              list_history:
+                endpoint: GET /organizations/{org_id}/projects/{project_id}/alerts/{alert_id}/history
+                pagination: offset_page
+
+  operations:
+    methods:
+      retrieve:
+        endpoint: GET /operations/{operation_id}
+      cancel:
+        endpoint: POST /operations/{operation_id}/cancel
+
+  webhooks:
+    methods:
+      list:
+        endpoint: GET /webhooks
+        pagination: cursor_page
+      create:
+        endpoint: POST /webhooks
+      retrieve:
+        endpoint: GET /webhooks/{webhook_id}
+      delete:
+        endpoint: DELETE /webhooks/{webhook_id}
+      list_deliveries:
+        endpoint: GET /webhooks/{webhook_id}/deliveries
+        pagination: cursor_page
+      verify_signature:
+        endpoint: POST /webhooks/{webhook_id}/verify
+
+settings:
+  license: MIT
+  idempotency_headers:
+    header: Idempotency-Key
+  readme:
+    example_endpoint: GET /organizations

@@ -1,0 +1,15 @@
+# Speakeasy workflow lock file
+# This file is managed by Speakeasy CLI and records generation metadata.
+# It is typically auto-generated but shown here for completeness.
+
+configVersion: 2.0.0
+generation:
+  sdkClassName: Chronocast
+  maintainOpenAPIOrder: true
+  usageSnippets:
+    optionalPropertyRendering: withExample
+  useClassNamesForArrayFields: true
+  fixes:
+    nameResolutionDec2023: true
+    parameterOrderingFeb2024: true
+    requestResponseComponentNamesFeb2024: true

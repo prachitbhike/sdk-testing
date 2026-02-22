@@ -1,0 +1,65 @@
+# Speakeasy SDK Generator Configuration for Chronocast API
+# https://www.speakeasyapi.dev/docs/gen-reference
+
+configVersion: 2.0.0
+
+generation:
+  sdkClassName: Chronocast
+  maintainOpenAPIOrder: true
+  usageSnippets:
+    optionalPropertyRendering: withExample
+  useClassNamesForArrayFields: true
+  fixes:
+    nameResolutionDec2023: true
+    parameterOrderingFeb2024: true
+    requestResponseComponentNamesFeb2024: true
+
+# TypeScript SDK target
+typescript:
+  version: 0.1.0
+  author: Chronocast
+  clientServerStatusCodesAsErrors: true
+  enumFormat: union
+  flattenGlobalSecurity: true
+  imports:
+    option: openapi
+    paths:
+      callbacks: models/callbacks
+      errors: models/errors
+      operations: models/operations
+      shared: models/components
+      webhooks: models/webhooks
+  inputModelSuffix: input
+  maxMethodParams: 4
+  methodArguments: require-security-and-request
+  moduleFormat: commonjs
+  outputModelSuffix: output
+  packageName: "@chronocast/sdk"
+  responseFormat: flat
+  templateVersion: v2
+
+# Python SDK target
+python:
+  version: 0.1.0
+  author: Chronocast
+  clientServerStatusCodesAsErrors: true
+  description: Chronocast Python SDK - Predictive analytics platform
+  flattenGlobalSecurity: true
+  imports:
+    option: openapi
+    paths:
+      callbacks: models/callbacks
+      errors: models/errors
+      operations: models/operations
+      shared: models/components
+      webhooks: models/webhooks
+  inputModelSuffix: input
+  maxMethodParams: 4
+  methodArguments: require-security-and-request
+  outputModelSuffix: output
+  packageName: chronocast
+  projectUrls:
+    documentation: https://chronocast.dev/docs
+    repository: https://github.com/chronocast/chronocast-python
+  responseFormat: flat
+  templateVersion: v2

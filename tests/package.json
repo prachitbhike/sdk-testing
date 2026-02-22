@@ -1,0 +1,15 @@
+{
+  "name": "chronocast-sdk-tests",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Cross-platform test harness for Stainless, Fern, and Speakeasy generated SDKs",
+  "scripts": {
+    "test:stainless": "node --experimental-vm-modules test-runner.js stainless",
+    "test:fern": "node --experimental-vm-modules test-runner.js fern",
+    "test:speakeasy": "node --experimental-vm-modules test-runner.js speakeasy",
+    "test:all": "node --experimental-vm-modules test-runner.js all"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0"
+  }
+}

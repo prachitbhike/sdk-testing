@@ -1,0 +1,32 @@
+# Speakeasy Workflow Configuration
+# Defines the source OpenAPI spec and SDK generation targets.
+
+workflowVersion: 1.0.0
+
+speakeasyVersion: latest
+
+sources:
+  chronocast-api:
+    inputs:
+      - location: ../../spec/chronocast.openapi.yaml
+
+targets:
+  typescript:
+    target: typescript
+    source: chronocast-api
+    output: ../../sdks/typescript
+    publish:
+      npm:
+        token: $NPM_TOKEN
+    codeSamples:
+      output: codeSamples-typescript.yaml
+
+  python:
+    target: python
+    source: chronocast-api
+    output: ../../sdks/python
+    publish:
+      pypi:
+        token: $PYPI_TOKEN
+    codeSamples:
+      output: codeSamples-python.yaml
