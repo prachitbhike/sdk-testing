@@ -364,6 +364,21 @@ function seed() {
 // =============================================================================
 const app = Fastify({ logger: true });
 
+// Allow empty bodies with application/json content-type (Stainless SDK sends
+// Content-Type: application/json on POST/DELETE even with no body)
+app.addContentTypeParser("application/json", { parseAs: "string" }, function (req, body, done) {
+  if (!body || body.length === 0) {
+    done(null, undefined);
+    return;
+  }
+  try {
+    done(null, JSON.parse(body));
+  } catch (err) {
+    err.statusCode = 400;
+    done(err, undefined);
+  }
+});
+
 await app.register(cors, { origin: true });
 await app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024 } });
 
@@ -893,13 +908,13 @@ app.post("/v1/organizations/:org_id/projects/:project_id/models/:model_id/predic
       // Send progress every batch
       if ((i + 1) % batchSize === 0 || i === points.length - 1) {
         const pct = parseFloat((((i + 1) / points.length) * 100).toFixed(1));
-        const progressEvent = { event: "progress", pct };
+        const progressEvent = { event: "progress", data: { pct } };
         reply.raw.write(`event: progress\ndata: ${JSON.stringify(progressEvent)}\n\n`);
       }
     }
 
     // Done event
-    const doneEvent = { event: "done", prediction_id: predictionId };
+    const doneEvent = { event: "done", data: { prediction_id: predictionId } };
     reply.raw.write(`event: done\ndata: ${JSON.stringify(doneEvent)}\n\n`);
     reply.raw.end();
     return;

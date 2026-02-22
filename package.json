@@ -15,5 +15,8 @@
   },
   "devDependencies": {
     "@redocly/cli": "^1.25.0"
+  },
+  "dependencies": {
+    "chronocast": "file:sdks/stainless"
   }
 }

@@ -1,0 +1,16 @@
+# UploadDatasetRequestBody
+
+## Example Usage
+
+```typescript
+import { UploadDatasetRequestBody } from "openapi/models/operations";
+
+// No examples available for this model
+```
+
+## Fields
+
+| Field                                                                                                                                                                                 | Type                                                                                                                                                                                  | Required                                                                                                                                                                              | Description                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                                                                                                                                                                                | *string*                                                                                                                                                                              | :heavy_check_mark:                                                                                                                                                                    | N/A                                                                                                                                                                                   |
+| `file`                                                                                                                                                                                | [File](https://developer.mozilla.org/en-US/docs/Web/API/File) \| [Blob](https://developer.mozilla.org/en-US/docs/Web/API/Blob) \| [operations.FileT](../../models/operations/file-t.md) | :heavy_check_mark:                                                                                                                                                                    | The dataset file (CSV, Parquet, or JSON)                                                                                                                                              |

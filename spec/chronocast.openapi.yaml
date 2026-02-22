@@ -531,8 +531,7 @@ components:
       properties:
         learning_rate:
           type: number
-          minimum: 0
-          exclusiveMinimum: true
+          exclusiveMinimum: 0
         epochs:
           type: integer
           minimum: 1
@@ -688,11 +687,15 @@ components:
         event:
           type: string
           const: progress
-        pct:
-          type: number
-          minimum: 0
-          maximum: 100
-      required: [event, pct]
+        data:
+          type: object
+          properties:
+            pct:
+              type: number
+              minimum: 0
+              maximum: 100
+          required: [pct]
+      required: [event, data]
 
     StreamDoneEvent:
       type: object
@@ -700,10 +703,14 @@ components:
         event:
           type: string
           const: done
-        prediction_id:
-          type: string
-          format: uuid
-      required: [event, prediction_id]
+        data:
+          type: object
+          properties:
+            prediction_id:
+              type: string
+              format: uuid
+          required: [prediction_id]
+      required: [event, data]
 
     StreamErrorEvent:
       type: object
@@ -711,11 +718,15 @@ components:
         event:
           type: string
           const: error
-        code:
-          type: string
-        message:
-          type: string
-      required: [event, code, message]
+        data:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+          required: [code, message]
+      required: [event, data]
 
     # -- Alert ------------------------------------------------------------
     Alert:
@@ -2010,6 +2021,8 @@ paths:
       operationId: verifyWebhookSignature
       summary: Verify a webhook payload signature
       tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/WebhookId"
       requestBody:
         required: true
         content:
